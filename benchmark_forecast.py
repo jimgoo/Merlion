@@ -25,10 +25,11 @@ from merlion.models.ensemble.combine import CombinerBase, Mean, ModelSelector, M
 from merlion.models.ensemble.forecast import ForecasterEnsembleConfig, ForecasterEnsemble
 from merlion.models.factory import ModelFactory
 from merlion.models.forecast.base import ForecasterBase
+from merlion.transform.normalize import MeanVarNormalize
 from merlion.transform.resample import TemporalResample
-from merlion.utils.time_series import granularity_str_to_seconds
+from merlion.transform.sequence import TransformSequence
 from merlion.utils import TimeSeries, UnivariateTimeSeries
-from merlion.utils.resample import get_gcd_timedelta
+from merlion.utils.resample import get_gcd_timedelta, granularity_str_to_seconds
 
 from ts_datasets.base import BaseDataset
 from ts_datasets.forecast import *
@@ -187,9 +188,22 @@ def get_model(model_name: str, dataset: BaseDataset, **kwargs) -> ForecasterBase
             f"transform {model_kwargs['transform']} and "
             f"using Identity instead."
         )
-    model_kwargs["transform"] = TemporalResample(
+
+    resample = TemporalResample(
         granularity=None, aggregation_policy="Mean", missing_value_policy="FFill"
     )
+    model_kwargs["transform"] = resample
+    
+    # for informer, add a standard scaler after the resample
+    # if 'informer' in model_name.lower():
+    #     model_kwargs["transform"] = TransformSequence([
+    #         resample,
+    #         MeanVarNormalize(normalize_bias=True, normalize_scale=True),
+    #     ])
+    # else:
+    #     model_kwargs["transform"] = resample
+
+    logger.info(f"Using model {model_name} with kwargs {model_kwargs}")
 
     return ModelFactory.create(name=model_type, **model_kwargs)
 
@@ -246,6 +260,7 @@ def train_model(
     # loop over dataset
 
     is_multivariate_data = dataset[0][0].shape[1] > 1
+    logger.info(f"Multivariate data: {is_multivariate_data}")
 
     for i, (df, md) in enumerate(tqdm.tqdm(dataset, desc=f"{dataset_name} Dataset")):
         if i <= i0:
@@ -268,7 +283,10 @@ def train_model(
         # Get the train/val split
         t = trainval.index[np.argmax(~trainval)].value // 1e9
         train_vals, test_vals = vals.bisect(t, t_in_left=False)
-
+        n_train = len(train_vals)
+        n_test = len(test_vals)
+        logger.info(f"{n_train} train, {n_test} test")
+    
         # Compute train_window_len and test_window_len
         train_start_timestamp = train_vals.univariates[train_vals.names[0]].time_stamps[0]
         test_start_timestamp = test_vals.univariates[test_vals.names[0]].time_stamps[0]
@@ -326,6 +344,8 @@ def train_model(
                 model=model,
                 config=ForecastEvaluatorConfig(train_window=train_window, horizon=horizon, retrain_freq=retrain_freq),
             )
+
+            logger.info(f"train_window: {train_window}, horizon: {horizon}, retrain_freq: {retrain_freq}")
 
             # Initialize train config
             train_kwargs = {}

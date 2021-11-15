@@ -3,6 +3,7 @@
   "Arima": {
     "config": {
       "default": {
+        "target_seq_index": 0,
         "order": [30, 0, 10]
       }
     }
@@ -12,6 +13,7 @@
   "Sarima": {
     "config": {
       "default": {
+        "target_seq_index": 0,
         "order": [15, 1, 5],
         "seasonal_order": [2, 0, 1, 30]
       }
@@ -23,6 +25,7 @@
     "model_type": "SeasonalityLayer",
     "config": {
       "default": {
+        "target_seq_index": 0,
         "model": {"name": "AutoSarima"},
         "periodicity_strategy": "min"
       }
@@ -32,6 +35,7 @@
   "ETS": {
     "config": {
       "default": {
+        "target_seq_index": 0,
         "damped_trend": true
       }
     }
@@ -40,6 +44,7 @@
   "MSES": {
     "config": {
       "default": {
+        "target_seq_index": 0,
         "max_forecast_steps": 100
       }
     }
@@ -48,6 +53,7 @@
   "Prophet": {
     "config": {
       "default": {
+        "target_seq_index": 0,
         "uncertainty_samples": 0,
         "add_seasonality": null
       }
@@ -58,6 +64,7 @@
     "model_type": "Prophet",
     "config": {
       "default": {
+        "target_seq_index": 0,
         "uncertainty_samples": 0,
         "add_seasonality": "auto"
       }
@@ -115,6 +122,18 @@
           "max_depth": 7,
           "sampling_mode": "normal",
           "prediction_stride": 1
+      },
+      "dataset": {}
+    }
+  },
+  "InformerForecaster" : {
+    "config": {
+      "default": {
+          "target_seq_index": 0,
+          "seq_len": 168,
+          "max_forecast_steps": 100,
+          "max_epochs": 100,
+          "d_model": 8
       },
       "dataset": {}
     }
