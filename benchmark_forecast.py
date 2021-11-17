@@ -290,8 +290,8 @@ def train_model(
         if is_multivariate_data:
             logger.warning('DEBUG SPLITS ARE BEING USED')
 
-            # train_pts, test_pts = 5000, 1000
-            train_pts, test_pts = 1000, 10
+            train_pts, test_pts = 5000, 1000
+            # train_pts, test_pts = 1000, 10
 
             df = df.head(train_pts + test_pts)
             vals = TimeSeries.from_pd(df)

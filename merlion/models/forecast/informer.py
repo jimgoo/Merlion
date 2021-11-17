@@ -136,7 +136,7 @@ class InformerForecaster(ForecasterBase):
         yhat = UnivariateTimeSeries(time_stamps, yhat, self.target_name).to_ts()
 
         # preds.y: [forc_len x n_preds x n_feat]
-        self._forecast = preds.y[:, :, :] # self.target_seq_index]
+        self._forecast = preds.y[:, :, :]
         self._col_names = train_df.columns.tolist()
 
         return yhat, None
@@ -188,14 +188,6 @@ class InformerForecaster(ForecasterBase):
             yhat = tensor[:n_ahead, -1, :]
             yhat = self._scaler.inverse_transform(yhat)
             yhat = UnivariateTimeSeries(time_stamps, yhat[:, self.target_seq_index], self.target_name)
-
-            # univariates = [UnivariateTimeSeries(time_stamps, yhat[:, i], col) for i, col in enumerate(self._col_names)]
-            # yhat = TimeSeries(univariates=univariates)
-            # inverse transform only works on all of the tags
-            # yhat = self.transform.invert(yhat)
-
-            # get just the target column
-            # yhat = yhat.univariates[self.target_name]
             yhat = yhat.to_ts().align(reference=orig_t)
             return yhat
 
