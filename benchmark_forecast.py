@@ -21,6 +21,7 @@ from typing import Dict, List
 import numpy as np
 import pandas as pd
 import tqdm
+from ts_datasets import forecast
 
 from merlion.evaluate.forecast import ForecastEvaluator, ForecastMetric, ForecastEvaluatorConfig
 from merlion.models.ensemble.combine import CombinerBase, Mean, ModelSelector, MetricWeightedMean
@@ -47,7 +48,6 @@ logging.getLogger('matplotlib').setLevel(logging.ERROR)
 MERLION_ROOT = os.path.dirname(os.path.abspath(__file__))
 CONFIG_JSON = os.path.join(MERLION_ROOT, "conf", "benchmark_forecast.json")
 DATADIR = os.path.join(MERLION_ROOT, "data")
-# OUTPUTDIR = os.path.join(MERLION_ROOT, "results", "forecast")
 
 
 def parse_args():
@@ -127,6 +127,11 @@ def parse_args():
         "that have already been computed! It does not "
         "run any algorithms, aside from the one(s) given "
         "to --models (if any).",
+    )
+    parser.add_argument(
+        "--forecast_dir",
+        type=str,
+        default="forecast",
     )
 
     args = parser.parse_args()
@@ -239,6 +244,7 @@ def train_model(
     csv: str,
     config_fname: str,
     stats_fname: str,
+    forecast_dir: str,
     retrain_type: str = "without_retrain",
     n_retrain: int = 10,
     load_checkpoint: bool = False,
@@ -251,7 +257,7 @@ def train_model(
     model_names = [resolve_model_name(m) for m in model_names]
     dirname = get_dirname(model_names, ensemble_type)
     dirname = dirname + "_" + retrain_type + str(n_retrain)
-    results_dir = os.path.join(MERLION_ROOT, "results", "forecast", dirname)
+    results_dir = os.path.join(MERLION_ROOT, "results", forecast_dir, dirname)
     os.makedirs(results_dir, exist_ok=True)
     dataset_name = get_dataset_name(dataset)
 
@@ -281,13 +287,13 @@ def train_model(
             dt = md["granularity"]
             df = df.resample(dt, closed="right", label="right").mean().interpolate()
 
-        if 1:
+        if is_multivariate_data:
             logger.warning('DEBUG SPLITS ARE BEING USED')
 
-            train_pts, test_pts = 5000, 1000
-            # train_pts, test_pts = 500, 10
+            # train_pts, test_pts = 5000, 1000
+            train_pts, test_pts = 1000, 10
 
-            df = df.head(train_pts)
+            df = df.head(train_pts + test_pts)
             vals = TimeSeries.from_pd(df)
             # Get time-delta
             if not is_multivariate_data:
@@ -345,7 +351,7 @@ def train_model(
 
         stats[i] = dict(
             n_train=n_train, n_test=n_test,
-            horizons=horizons, horizon_times=[],
+            horizons=horizons,
             train_start_timestamp=train_start_timestamp,
             train_end_timestamp=train_end_timestamp,
             train_window_len=train_window_len,
@@ -353,6 +359,8 @@ def train_model(
             test_end_timestamp=test_end_timestamp,
             test_window_len=test_window_len,
             retrain_type=retrain_type, n_retrain=n_retrain,
+            # one per horizon below here
+            times=[], rmses=[], smapes=[],
         )
 
         # loop over horizon conditions
@@ -405,7 +413,9 @@ def train_model(
             rmses = evaluator.evaluate(ground_truth=test_vals, predict=test_pred, metric=ForecastMetric.RMSE)
             smapes = evaluator.evaluate(ground_truth=test_vals, predict=test_pred, metric=ForecastMetric.sMAPE)
 
-            stats[i]['horizon_times'].append(time.time() - start_time)
+            stats[i]['times'].append(time.time() - start_time)
+            stats[i]['rmses'].append(rmses)
+            stats[i]['smapes'].append(smapes)
 
             # Log relevant info to the CSV
             with open(csv, "a") as f:
@@ -535,7 +545,7 @@ def main():
         model_names = [resolve_model_name(m) for m in args.models]
         dirname = get_dirname(model_names, args.ensemble_type)
         dirname = dirname + "_" + args.retrain_type + str(args.n_retrain)
-        results_dir = os.path.join(MERLION_ROOT, "results", "forecast", dirname)
+        results_dir = os.path.join(MERLION_ROOT, "results", args.forecast_dir, dirname)
         basename = dataset_name
         if args.hash is not None:
             basename += "_" + args.hash
@@ -553,6 +563,7 @@ def main():
             csv=csv,
             config_fname=config_fname,
             stats_fname=stats_fname,
+            forecast_dir=args.forecast_dir,
             load_checkpoint=args.load_checkpoint,
             visualize=args.visualize,
         )
@@ -591,7 +602,7 @@ def main():
             continue
 
     # Join all the dataframes into one
-    dirname = os.path.join(MERLION_ROOT, "results", "forecast")
+    dirname = os.path.join(MERLION_ROOT, "results", args.forecast_dir)
     full_df = join_dfs(name2df)
     full_df.to_csv(os.path.join(dirname, f"{dataset_name}_full.csv"), index=False)
 

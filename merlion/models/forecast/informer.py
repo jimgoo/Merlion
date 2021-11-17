@@ -129,12 +129,17 @@ class InformerForecaster(ForecasterBase):
         self.epochs = self.model.fit(train_df)
 
         preds = self.model.predict(train_df)
+        yhat = preds.y[-1, :, :]
+        yhat = self._scaler.inverse_transform(yhat)
+        yhat = yhat[:, self.target_seq_index]
+        time_stamps = train_df.index[self.model.seq_len : -self.model.forc_len]
+        yhat = UnivariateTimeSeries(time_stamps, yhat, self.target_name).to_ts()
 
         # preds.y: [forc_len x n_preds x n_feat]
         self._forecast = preds.y[:, :, :] # self.target_seq_index]
         self._col_names = train_df.columns.tolist()
 
-        return None, None
+        return yhat, None
     
     def forecast(self,
                  time_stamps: List[int],
@@ -195,10 +200,11 @@ class InformerForecaster(ForecasterBase):
             return yhat
 
         if time_series_prev is None:
+            # If no previous time series is given, we just return the last forecast from training
             yhat = make_output_series(self._forecast, n_ahead)
         else:
             prev_df = self.transform(time_series_prev).to_pd()
-            logger.info(f"predict: start = {prev_df.index[0]}, end = {prev_df.index[-1]}, n_rows: {len(prev_df)}")
+            # logger.info(f"predict: start = {prev_df.index[0]}, end = {prev_df.index[-1]}, n_rows: {len(prev_df)}")
 
             preds = self.model.predict(prev_df)
             yhat = make_output_series(preds.y, n_ahead)
