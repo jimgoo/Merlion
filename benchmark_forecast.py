@@ -582,7 +582,7 @@ def main():
 
     # Now we summarize all results. Get all the individual CSV's as dataframes
     name2df = OrderedDict()
-    prefix = f"{MERLION_ROOT}/results/forecast/*/{dataset_name}"
+    prefix = f"{MERLION_ROOT}/results/{args.forecast_dir}/*/{dataset_name}"
     csvs = glob.glob(f"{prefix}.csv") + glob.glob(f"{prefix}_*.csv")
     csvs = [c for c in csvs if not c.endswith(f"_summary.csv")]
     if len(csvs) == 0:
