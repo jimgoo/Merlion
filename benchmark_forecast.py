@@ -14,6 +14,8 @@ import os
 import re
 import sys
 import git
+import time
+import warnings
 from typing import Dict, List
 
 import numpy as np
@@ -36,12 +38,16 @@ from ts_datasets.forecast import *
 
 import matplotlib.pyplot as plt
 
+from nbm_bench.io import write_json
+
 logger = logging.getLogger(__name__)
+
+logging.getLogger('matplotlib').setLevel(logging.ERROR)
 
 MERLION_ROOT = os.path.dirname(os.path.abspath(__file__))
 CONFIG_JSON = os.path.join(MERLION_ROOT, "conf", "benchmark_forecast.json")
 DATADIR = os.path.join(MERLION_ROOT, "data")
-OUTPUTDIR = os.path.join(MERLION_ROOT, "results", "forecast")
+# OUTPUTDIR = os.path.join(MERLION_ROOT, "results", "forecast")
 
 
 def parse_args():
@@ -59,7 +65,7 @@ def parse_args():
         default="M4_Hourly",
         help="Name of dataset to run benchmark on. See get_dataset() "
         "in ts_datasets/ts_datasets/forecast/__init__.py for "
-        "valid options.",
+        "valid options. (M4, EnergyPower, SeattleTrail, SolarPlant)",
     )
     parser.add_argument(
         "--models",
@@ -232,6 +238,7 @@ def train_model(
     ensemble_type: str,
     csv: str,
     config_fname: str,
+    stats_fname: str,
     retrain_type: str = "without_retrain",
     n_retrain: int = 10,
     load_checkpoint: bool = False,
@@ -262,6 +269,8 @@ def train_model(
     is_multivariate_data = dataset[0][0].shape[1] > 1
     logger.info(f"Multivariate data: {is_multivariate_data}")
 
+    stats = {}
+
     for i, (df, md) in enumerate(tqdm.tqdm(dataset, desc=f"{dataset_name} Dataset")):
         if i <= i0:
             continue
@@ -272,20 +281,42 @@ def train_model(
             dt = md["granularity"]
             df = df.resample(dt, closed="right", label="right").mean().interpolate()
 
-        vals = TimeSeries.from_pd(df)
-        # Get time-delta
-        if not is_multivariate_data:
-            dt = df.index[1] - df.index[0]
-        else:
-            dt = get_gcd_timedelta(vals.time_stamps)
-            dt = pd.to_timedelta(dt, unit="s")
+        if 1:
+            logger.warning('DEBUG SPLITS ARE BEING USED')
 
-        # Get the train/val split
-        t = trainval.index[np.argmax(~trainval)].value // 1e9
-        train_vals, test_vals = vals.bisect(t, t_in_left=False)
+            train_pts, test_pts = 5000, 1000
+            # train_pts, test_pts = 500, 10
+
+            df = df.head(train_pts)
+            vals = TimeSeries.from_pd(df)
+            # Get time-delta
+            if not is_multivariate_data:
+                dt = df.index[1] - df.index[0]
+            else:
+                dt = get_gcd_timedelta(vals.time_stamps)
+                dt = pd.to_timedelta(dt, unit="s")
+
+            # Get the train/val split
+            t = df.index[-test_pts].value // 1e9
+            train_vals, test_vals = vals.bisect(t, t_in_left=False)
+        else:
+            vals = TimeSeries.from_pd(df)
+            # Get time-delta
+            if not is_multivariate_data:
+                dt = df.index[1] - df.index[0]
+            else:
+                dt = get_gcd_timedelta(vals.time_stamps)
+                dt = pd.to_timedelta(dt, unit="s")
+
+            # Get the train/val split
+            t = trainval.index[np.argmax(~trainval)].value // 1e9
+            train_vals, test_vals = vals.bisect(t, t_in_left=False)
+
         n_train = len(train_vals)
         n_test = len(test_vals)
         logger.info(f"{n_train} train, {n_test} test")
+
+        df.to_hdf(os.path.join(results_dir, f"{dataset_name}_df_{i}.h5"), "df")
     
         # Compute train_window_len and test_window_len
         train_start_timestamp = train_vals.univariates[train_vals.names[0]].time_stamps[0]
@@ -312,6 +343,18 @@ def train_model(
         else:
             horizons = [test_window_len]
 
+        stats[i] = dict(
+            n_train=n_train, n_test=n_test,
+            horizons=horizons, horizon_times=[],
+            train_start_timestamp=train_start_timestamp,
+            train_end_timestamp=train_end_timestamp,
+            train_window_len=train_window_len,
+            test_start_timestamp=test_start_timestamp,
+            test_end_timestamp=test_end_timestamp,
+            test_window_len=test_window_len,
+            retrain_type=retrain_type, n_retrain=n_retrain,
+        )
+
         # loop over horizon conditions
         for horizon in horizons:
             horizon = granularity_str_to_seconds(horizon)
@@ -331,6 +374,8 @@ def train_model(
                 raise ValueError(
                     "the retrain_type should be without_retrain, sliding_window_retrain or expanding_window_retrain"
                 )
+ 
+            start_time = time.time()
 
             # Get Model
             models = [get_model(m, dataset, max_forecast_steps=max_forecast_steps) for m in model_names]
@@ -360,6 +405,8 @@ def train_model(
             rmses = evaluator.evaluate(ground_truth=test_vals, predict=test_pred, metric=ForecastMetric.RMSE)
             smapes = evaluator.evaluate(ground_truth=test_vals, predict=test_pred, metric=ForecastMetric.sMAPE)
 
+            stats[i]['horizon_times'].append(time.time() - start_time)
+
             # Log relevant info to the CSV
             with open(csv, "a") as f:
                 f.write(f"{i},{df.columns[0]},{horizon},{retrain_type},{n_retrain},{rmses},{smapes}\n")
@@ -378,8 +425,8 @@ def train_model(
                     train_pred = TimeSeries({name: UnivariateTimeSeries(train_time_stamps, None)})
                 fig_name = dirname + "_" + retrain_type + str(n_retrain) + "_" + "horizon" + str(int(horizon)) + ".png"
                 plot_unrolled_compare(
-                    train_vals,
-                    test_vals,
+                    train_vals.univariates[name].to_ts(),
+                    test_vals.univariates[name].to_ts(),
                     train_pred,
                     test_pred,
                     os.path.join(fig_dataset_dir, fig_name),
@@ -400,25 +447,32 @@ def train_model(
         with open(config_fname, "w") as f:
             json.dump(full_config, f, indent=2, sort_keys=True)
 
+    # Save stats
+    print(stats)
+    write_json(stats_fname, stats)
+
 
 def get_code_version_info():
     return dict(time=str(pd.Timestamp.now()), commit=git.Repo(search_parent_directories=True).head.object.hexsha)
 
 
 def plot_unrolled_compare(train_vals, test_vals, train_pred, test_pred, outputpath, title):
-    truth_pd = (train_vals + test_vals).to_pd()
-    truth_pd.columns = ["ground_truth"]
-    pred_pd = (train_pred + test_pred).to_pd()
-    pred_pd.columns = ["prediction"]
-    result_pd = pd.concat([truth_pd, pred_pd], axis=1)
-    plt.figure()
-    plt.rcParams["savefig.dpi"] = 500
-    plt.rcParams["figure.dpi"] = 500
-    result_pd.plot(linewidth=0.5)
-    plt.axvline(train_vals.to_pd().index[-1], color="r")
-    plt.title(title)
-    plt.savefig(outputpath)
-    plt.clf()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+
+        truth_pd = (train_vals + test_vals).to_pd()
+        truth_pd.columns = ["ground_truth"]
+        pred_pd = (train_pred + test_pred).to_pd()
+        pred_pd.columns = ["prediction"]
+        result_pd = pd.concat([truth_pd, pred_pd], axis=1)
+        plt.figure()
+        plt.rcParams["savefig.dpi"] = 500
+        plt.rcParams["figure.dpi"] = 500
+        result_pd.plot(linewidth=0.5)
+        plt.axvline(train_vals.to_pd().index[-1], color="r")
+        plt.title(title)
+        plt.savefig(outputpath)
+        plt.clf()
 
 
 def join_dfs(name2df: Dict[str, pd.DataFrame]) -> pd.DataFrame:
@@ -488,6 +542,7 @@ def main():
         config_fname = f"{dataset_name}_config"
         csv = os.path.join(results_dir, f"{basename}.csv")
         config_fname = os.path.join(results_dir, f"{config_fname}.json")
+        stats_fname = os.path.join(results_dir, f"{dataset_name}_stats.json")
 
         train_model(
             model_names=args.models,
@@ -497,6 +552,7 @@ def main():
             n_retrain=args.n_retrain,
             csv=csv,
             config_fname=config_fname,
+            stats_fname=stats_fname,
             load_checkpoint=args.load_checkpoint,
             visualize=args.visualize,
         )

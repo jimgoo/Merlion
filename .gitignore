@@ -17,3 +17,8 @@ Icon?
 docs/build/*
 .ipynb_checkpoints
 venv/
+# results files
+results/
+results-*/
+# data files
+data/

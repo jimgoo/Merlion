@@ -13,6 +13,7 @@ import warnings
 from typing import List, Tuple, Union
 
 import numpy as np
+import pandas as pd
 from merlion.utils import autosarima_utils
 from scipy.stats import norm
 from statsmodels.tsa.arima.model import ARIMA as sm_Sarima
@@ -96,6 +97,8 @@ class Sarima(ForecasterBase, SeasonalityModel):
         # Train the transform & transform the training data
         train_data = self.train_pre_process(train_data, require_even_sampling=True, require_univariate=False)
 
+        logger.info("Training SARIMA model")
+
         # train model
         name = self.target_name
         train_data = train_data.univariates[name].to_pd()
@@ -133,6 +136,17 @@ class Sarima(ForecasterBase, SeasonalityModel):
         # forecast, which we'd like to start returning a forecast from
         orig_t = None if isinstance(time_stamps, (int, float)) else time_stamps
         time_stamps = self.resample_time_stamps(time_stamps, time_series_prev)
+
+        # t0 = pd.Timestamp.fromtimestamp(time_stamps[0])
+        # t1 = pd.Timestamp.fromtimestamp(time_stamps[-1])
+        # delta = t1 - t0
+        # print(f"Forecasting {len(time_stamps)} points from {t0} to {t1}, delta = {delta}")
+
+        # if time_series_prev is not None:
+        #     t0 = pd.Timestamp.fromtimestamp(time_series_prev.univariates[self.target_seq_index].time_stamps[0])
+        #     t1 = pd.Timestamp.fromtimestamp(time_series_prev.univariates[self.target_seq_index].time_stamps[-1])
+        #     delta = t1 - t0
+        #     print(f"Previous ts has {len(time_series_prev)} points from {t0} to {t1}, delta = {delta}")
 
         # transform time_series_prev if relevant (before making the prediction)
         if time_series_prev is not None:
