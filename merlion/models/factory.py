@@ -12,6 +12,7 @@ from typing import Type
 import dill
 from merlion.models.base import ModelBase
 from merlion.models.forecast.informer import InformerForecaster
+from merlion.models.forecast.repeat_recent import RepeatRecent
 from merlion.utils import dynamic_import
 
 
@@ -54,6 +55,7 @@ import_alias = dict(
     ExtraTreesForecaster="merlion.models.forecast.baggingtrees:ExtraTreesForecaster",
     LGBMForecaster="merlion.models.forecast.boostingtrees:LGBMForecaster",
     InformerForecaster="merlion.models.forecast.informer:InformerForecaster",
+    RepeatRecent="merlion.models.forecast.repeat_recent:RepeatRecent",
     # Ensembles
     DetectorEnsemble="merlion.models.ensemble.anomaly:DetectorEnsemble",
     ForecasterEnsemble="merlion.models.ensemble.forecast:ForecasterEnsemble",

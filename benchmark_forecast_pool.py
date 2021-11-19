@@ -4,25 +4,36 @@ from joblib import Parallel, delayed
 from nbm_bench.io import run_cmd
 
 MODELS = [
-    "ARIMA",
-    "SARIMA",
-    "AutoSARIMA",
+    "Arima",
+    "Sarima",
+    "AutoSarima",
     "ETS",
     "MSES",
     "Prophet",
     "AutoProphet",
-    "VAR",
+    "VectorAR",
     "RandomForestForecaster",
     "ExtraTreesForecaster",
     "LGBMForecaster",
     "InformerForecaster",
+    "RepeatRecent",
+    # "\{Arima,Prophet\}"
 ]
-DATASETS = ["EnergyPower", "SeattleTrail", "SolarPlant"]
+
+DATASETS = ["EnergyPower", "SeattleTrail", "SolarPlant", "ETT", "WTH", "ECL"]
 
 
 def run_single(args):
-    model, dataset, dry, forecast_dir = args
-    cmd = f"python benchmark_forecast.py --dataset {dataset} --model {model} --debug --visualize --forecast_dir {forecast_dir}"
+    model, dataset, dry, forecast_dir, n_train, n_test = args
+    cmd = f"""
+    python benchmark_forecast.py \
+        --dataset {dataset} \
+        --models {model} \
+        --debug --visualize \
+        --forecast_dir {forecast_dir} \
+        --n_train {n_train} \
+        --n_test {n_test}
+    """
     if dry:
         print("dry run")
         print(cmd)
@@ -30,7 +41,15 @@ def run_single(args):
         run_cmd(cmd)
 
 
-def main(models="all", datasets="all", dry=False, forecast_dir="forecast", n_jobs=-2):
+def main(
+    models="all",
+    datasets="all",
+    forecast_dir="forecast",
+    n_train=None,
+    n_test=None,
+    n_jobs=-2,
+    dry=False,
+):
     if models == "all":
         models = MODELS
 
@@ -39,7 +58,9 @@ def main(models="all", datasets="all", dry=False, forecast_dir="forecast", n_job
 
     job_args = []
     for dataset in datasets:
-        job_args.extend([(model, dataset, dry, forecast_dir) for model in models])
+        job_args.extend(
+            [(model, dataset, dry, forecast_dir, n_train, n_test) for model in models]
+        )
 
     pool = Parallel(n_jobs=n_jobs)(delayed(run_single)(args) for args in job_args)
 

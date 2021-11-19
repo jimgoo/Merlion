@@ -65,7 +65,7 @@ def parse_args():
         default="M4_Hourly",
         help="Name of dataset to run benchmark on. See get_dataset() "
         "in ts_datasets/ts_datasets/forecast/__init__.py for "
-        "valid options. (M4, EnergyPower, SeattleTrail, SolarPlant)",
+        "valid options.)",
     )
     parser.add_argument(
         "--models",
@@ -132,6 +132,16 @@ def parse_args():
         "--forecast_dir",
         type=str,
         default="forecast",
+    )
+    parser.add_argument(
+        "--n_train",
+        type=int,
+        default=None,
+    )
+    parser.add_argument(
+        "--n_test",
+        type=int,
+        default=None,
     )
 
     args = parser.parse_args()
@@ -200,19 +210,9 @@ def get_model(model_name: str, dataset: BaseDataset, **kwargs) -> ForecasterBase
             f"using Identity instead."
         )
 
-    resample = TemporalResample(
+    model_kwargs["transform"] = TemporalResample(
         granularity=None, aggregation_policy="Mean", missing_value_policy="FFill"
     )
-    model_kwargs["transform"] = resample
-    
-    # for informer, add a standard scaler after the resample
-    # if 'informer' in model_name.lower():
-    #     model_kwargs["transform"] = TransformSequence([
-    #         resample,
-    #         MeanVarNormalize(normalize_bias=True, normalize_scale=True),
-    #     ])
-    # else:
-    #     model_kwargs["transform"] = resample
 
     logger.info(f"Using model {model_name} with kwargs {model_kwargs}")
 
@@ -249,6 +249,8 @@ def train_model(
     n_retrain: int = 10,
     load_checkpoint: bool = False,
     visualize: bool = False,
+    n_train: int = None,
+    n_test: int = None,
 ):
     """
     Trains all the model on the dataset, and evaluates its predictions for every
@@ -278,6 +280,9 @@ def train_model(
     stats = {}
 
     for i, (df, md) in enumerate(tqdm.tqdm(dataset, desc=f"{dataset_name} Dataset")):
+
+        print(df.head())
+
         if i <= i0:
             continue
         trainval = md["trainval"]
@@ -288,12 +293,7 @@ def train_model(
             df = df.resample(dt, closed="right", label="right").mean().interpolate()
 
         if is_multivariate_data:
-            logger.warning('DEBUG SPLITS ARE BEING USED')
-
-            train_pts, test_pts = 5000, 1000
-            # train_pts, test_pts = 1000, 10
-
-            df = df.head(train_pts + test_pts)
+            df = df.head(n_train + n_test)
             vals = TimeSeries.from_pd(df)
             # Get time-delta
             if not is_multivariate_data:
@@ -303,7 +303,7 @@ def train_model(
                 dt = pd.to_timedelta(dt, unit="s")
 
             # Get the train/val split
-            t = df.index[-test_pts].value // 1e9
+            t = df.index[-n_test].value // 1e9
             train_vals, test_vals = vals.bisect(t, t_in_left=False)
         else:
             vals = TimeSeries.from_pd(df)
@@ -318,9 +318,7 @@ def train_model(
             t = trainval.index[np.argmax(~trainval)].value // 1e9
             train_vals, test_vals = vals.bisect(t, t_in_left=False)
 
-        n_train = len(train_vals)
-        n_test = len(test_vals)
-        logger.info(f"{n_train} train, {n_test} test")
+        logger.info(f"{len(train_vals)} train, {len(test_vals)} test")
 
         df.to_hdf(os.path.join(results_dir, f"{dataset_name}_df_{i}.h5"), "df")
     
@@ -566,6 +564,8 @@ def main():
             forecast_dir=args.forecast_dir,
             load_checkpoint=args.load_checkpoint,
             visualize=args.visualize,
+            n_train=args.n_train,
+            n_test=args.n_test,
         )
 
         # Pool the mean/medium sMAPE, RMSE for all evaluation

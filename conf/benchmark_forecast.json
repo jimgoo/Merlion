@@ -131,9 +131,18 @@
       "default": {
           "target_seq_index": 0,
           "seq_len": 168,
-          "max_forecast_steps": 100,
+          "max_forecast_steps": 3,
           "max_epochs": 100,
           "d_model": 8
+      },
+      "dataset": {}
+    }
+  },
+  "RepeatRecent" : {
+    "config": {
+      "default": {
+          "target_seq_index": 0,
+          "max_forecast_steps": 3
       },
       "dataset": {}
     }
