@@ -40,6 +40,7 @@ from ts_datasets.forecast import *
 import matplotlib.pyplot as plt
 
 from nbm_bench.io import write_json
+from joblib import Parallel, delayed
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,23 @@ MERLION_ROOT = os.path.dirname(os.path.abspath(__file__))
 CONFIG_JSON = os.path.join(MERLION_ROOT, "conf", "benchmark_forecast.json")
 DATADIR = os.path.join(MERLION_ROOT, "data")
 
+MODELS = [
+    "RepeatRecent",
+    "Arima",
+    "Sarima",
+    "AutoSarima",
+    "ETS",
+    "MSES",
+    "Prophet",
+    "AutoProphet",
+    "VectorAR",
+    "RandomForestForecaster",
+    "ExtraTreesForecaster",
+    "LGBMForecaster",
+    "InformerForecaster",
+]
+
+DATASETS = ["EnergyPower", "SeattleTrail", "SolarPlant", "ETT", "WTH", "ECL"]
 
 def parse_args():
     with open(CONFIG_JSON, "r") as f:
@@ -61,19 +79,20 @@ def parse_args():
         "package) and ts_datasets (a sub-repo)."
     )
     parser.add_argument(
-        "--dataset",
-        default="M4_Hourly",
-        help="Name of dataset to run benchmark on. See get_dataset() "
-        "in ts_datasets/ts_datasets/forecast/__init__.py for "
-        "valid options. (M4, EnergyPower, SeattleTrail, SolarPlant)",
+        "--datasets",
+        type=str,
+        nargs="*",
+        default=DATASETS,
+        help="Names of dataset to run benchmark on.",
+        choices=DATASETS,
     )
     parser.add_argument(
         "--models",
         type=str,
         nargs="*",
-        default=None,
+        default=MODELS,
         help="Name of forecasting model to benchmark.",
-        choices=valid_models,
+        choices=MODELS,
     )
     parser.add_argument(
         "--hash",
@@ -133,17 +152,48 @@ def parse_args():
         type=str,
         default="forecast",
     )
+    parser.add_argument(
+        "--n_train",
+        type=int,
+        default=None,
+        help="Number of point in train set",
+    )
+    parser.add_argument(
+        "--n_test",
+        type=int,
+        default=None,
+        help="Number of points in test set",
+    )
+    parser.add_argument(
+        "--n_jobs",
+        type=int,
+        default=-2,
+        help='Number of joblib jobs',
+    )
+    parser.add_argument(
+        "--dry",
+        type=int,
+        default=0,
+        help='Dry run'
+    )
+    parser.add_argument(
+        "--horizon_steps",
+        type=int,
+        nargs="*",
+        default=3,
+        help="Number of steps ahead to forescast",
+    )
 
     args = parser.parse_args()
 
     # If not summarizing all results, we need at least one model to evaluate
-    if args.summarize and args.models is None:
-        args.models = []
-    elif not args.summarize:
-        if args.models is None:
-            args.models = ["ARIMA"]
-        elif len(args.models) == 0:
-            parser.error("At least one model required if --summarize not given")
+    # if args.summarize and args.models is None:
+    #     args.models = []
+    # elif not args.summarize:
+    #     if args.models is None:
+    #         args.models = ["ARIMA"]
+    #     elif len(args.models) == 0:
+    #         parser.error("At least one model required if --summarize not given")
 
     return args
 
@@ -200,19 +250,9 @@ def get_model(model_name: str, dataset: BaseDataset, **kwargs) -> ForecasterBase
             f"using Identity instead."
         )
 
-    resample = TemporalResample(
+    model_kwargs["transform"] = TemporalResample(
         granularity=None, aggregation_policy="Mean", missing_value_policy="FFill"
     )
-    model_kwargs["transform"] = resample
-    
-    # for informer, add a standard scaler after the resample
-    # if 'informer' in model_name.lower():
-    #     model_kwargs["transform"] = TransformSequence([
-    #         resample,
-    #         MeanVarNormalize(normalize_bias=True, normalize_scale=True),
-    #     ])
-    # else:
-    #     model_kwargs["transform"] = resample
 
     logger.info(f"Using model {model_name} with kwargs {model_kwargs}")
 
@@ -249,6 +289,9 @@ def train_model(
     n_retrain: int = 10,
     load_checkpoint: bool = False,
     visualize: bool = False,
+    n_train: int = None,
+    n_test: int = None,
+    horizon_steps: List[int] = None,
 ):
     """
     Trains all the model on the dataset, and evaluates its predictions for every
@@ -278,6 +321,9 @@ def train_model(
     stats = {}
 
     for i, (df, md) in enumerate(tqdm.tqdm(dataset, desc=f"{dataset_name} Dataset")):
+
+        print(df.head())
+
         if i <= i0:
             continue
         trainval = md["trainval"]
@@ -288,12 +334,7 @@ def train_model(
             df = df.resample(dt, closed="right", label="right").mean().interpolate()
 
         if is_multivariate_data:
-            logger.warning('DEBUG SPLITS ARE BEING USED')
-
-            train_pts, test_pts = 5000, 1000
-            # train_pts, test_pts = 1000, 10
-
-            df = df.head(train_pts + test_pts)
+            df = df.head(n_train + n_test)
             vals = TimeSeries.from_pd(df)
             # Get time-delta
             if not is_multivariate_data:
@@ -303,7 +344,7 @@ def train_model(
                 dt = pd.to_timedelta(dt, unit="s")
 
             # Get the train/val split
-            t = df.index[-test_pts].value // 1e9
+            t = df.index[-n_test].value // 1e9
             train_vals, test_vals = vals.bisect(t, t_in_left=False)
         else:
             vals = TimeSeries.from_pd(df)
@@ -318,9 +359,7 @@ def train_model(
             t = trainval.index[np.argmax(~trainval)].value // 1e9
             train_vals, test_vals = vals.bisect(t, t_in_left=False)
 
-        n_train = len(train_vals)
-        n_test = len(test_vals)
-        logger.info(f"{n_train} train, {n_test} test")
+        logger.info(f"{len(train_vals)} train, {len(test_vals)} test")
 
         df.to_hdf(os.path.join(results_dir, f"{dataset_name}_df_{i}.h5"), "df")
     
@@ -333,25 +372,34 @@ def train_model(
         test_end_timestamp = test_vals.univariates[test_vals.names[0]].time_stamps[-1]
         test_window_len = test_end_timestamp - train_end_timestamp
 
-        # Get all the horizon conditions we want to evaluate from metadata
-        if any("condition" in k and isinstance(v, list) for k, v in md.items()):
-            conditions = sum([v for k, v in md.items() if "condition" in k and isinstance(v, list)], [])
-            logger.debug("\n" + "=" * 80 + "\n" + df.columns[0] + "\n" + "=" * 80 + "\n")
-            horizons = set()
-            for condition in conditions:
-                horizons.update([v for k, v in condition.items() if "horizon" in k])
+        # Get all the horizon conditions we want to evaluate from metadata (M4 only currently)
+        # if any("condition" in k and isinstance(v, list) for k, v in md.items()):
+        #     conditions = sum([v for k, v in md.items() if "condition" in k and isinstance(v, list)], [])
+        #     logger.debug("\n" + "=" * 80 + "\n" + df.columns[0] + "\n" + "=" * 80 + "\n")
+        #     horizons = set()
+        #     for condition in conditions:
+        #         horizons.update([v for k, v in condition.items() if "horizon" in k])
 
-        # For multivariate data, we use a horizon of 3
-        elif is_multivariate_data:
-            horizons = [3 * dt]
+        # # For multivariate data, we use a horizon of 3
+        # elif is_multivariate_data:
+        #     horizons = [3 * dt]
 
-        # For univariate data, we predict the entire test data in batch
-        else:
+        # # For univariate data, we predict the entire test data in batch
+        # else:
+        #     horizons = [test_window_len]
+
+        if horizon_steps is None:
+            # forecast over the full test test, for M4 mostly where len(test) = 48
             horizons = [test_window_len]
+        else:
+            horizons = [steps * dt for steps in horizon_steps]
 
         stats[i] = dict(
-            n_train=n_train, n_test=n_test,
-            horizons=horizons,
+            n_train=n_train,
+            n_test=n_test,
+            dt=dt,
+            horizon_dts=horizons,
+            horizon_steps=horizon_steps,
             train_start_timestamp=train_start_timestamp,
             train_end_timestamp=train_end_timestamp,
             train_window_len=train_window_len,
@@ -359,8 +407,7 @@ def train_model(
             test_end_timestamp=test_end_timestamp,
             test_window_len=test_window_len,
             retrain_type=retrain_type, n_retrain=n_retrain,
-            # one per horizon below here
-            times=[], rmses=[], smapes=[],
+            horizons=[],
         )
 
         # loop over horizon conditions
@@ -413,9 +460,13 @@ def train_model(
             rmses = evaluator.evaluate(ground_truth=test_vals, predict=test_pred, metric=ForecastMetric.RMSE)
             smapes = evaluator.evaluate(ground_truth=test_vals, predict=test_pred, metric=ForecastMetric.sMAPE)
 
-            stats[i]['times'].append(time.time() - start_time)
-            stats[i]['rmses'].append(rmses)
-            stats[i]['smapes'].append(smapes)
+            stats[i]['horizons'].append(dict(
+                time=time.time() - start_time,  
+                rmse=rmses,
+                smape=smapes,
+                max_forecast_steps=max_forecast_steps,
+                )
+            )
 
             # Log relevant info to the CSV
             with open(csv, "a") as f:
@@ -530,13 +581,7 @@ def summarize_full_df(full_df: pd.DataFrame) -> pd.DataFrame:
     return summary_df
 
 
-def main():
-    args = parse_args()
-    logging.basicConfig(
-        format="%(asctime)s (%(module)s:%(lineno)d) %(levelname)s: %(message)s",
-        stream=sys.stdout,
-        level=logging.DEBUG if args.debug else logging.INFO,
-    )
+def run_dataset(args):
     dataset = get_dataset(args.dataset)
     dataset_name = get_dataset_name(dataset)
 
@@ -566,6 +611,9 @@ def main():
             forecast_dir=args.forecast_dir,
             load_checkpoint=args.load_checkpoint,
             visualize=args.visualize,
+            n_train=args.n_train,
+            n_test=args.n_test,
+            horizon_steps=args.horizon_steps,
         )
 
         # Pool the mean/medium sMAPE, RMSE for all evaluation
@@ -612,6 +660,30 @@ def main():
     if args.summarize:
         print(summary_df)
 
+
+def main():
+    args = parse_args()
+    logging.basicConfig(
+        format="%(asctime)s (%(module)s:%(lineno)d) %(levelname)s: %(message)s",
+        stream=sys.stdout,
+        level=logging.DEBUG if args.debug else logging.INFO,
+    )
+    import copy
+
+    job_args = []
+    for dataset in args.datasets:
+        for model in args.models:
+            args2 = copy.deepcopy(args)
+            del args2.datasets
+            args2.models = [model]
+            args2.dataset = dataset
+            job_args.append(args2)
+
+    for args in job_args:
+        print(args)
+
+    if not args.dry:
+        pool = Parallel(n_jobs=args.n_jobs)(delayed(run_dataset)(args) for args in job_args)
 
 if __name__ == "__main__":
     main()

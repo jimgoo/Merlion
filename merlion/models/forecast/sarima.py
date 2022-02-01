@@ -97,8 +97,6 @@ class Sarima(ForecasterBase, SeasonalityModel):
         # Train the transform & transform the training data
         train_data = self.train_pre_process(train_data, require_even_sampling=True, require_univariate=False)
 
-        logger.info("Training SARIMA model")
-
         # train model
         name = self.target_name
         train_data = train_data.univariates[name].to_pd()

@@ -13,8 +13,11 @@ from ts_datasets.forecast.m4 import M4
 from ts_datasets.forecast.energy_power import EnergyPower
 from ts_datasets.forecast.seattle_trail import SeattleTrail
 from ts_datasets.forecast.solar_plant import SolarPlant
+from ts_datasets.forecast.ETT import ETT
+from ts_datasets.forecast.WTH import WTH
+from ts_datasets.forecast.ECL import ECL
 
-__all__ = ["get_dataset", "M4", "EnergyPower", "SeattleTrail", "SolarPlant"]
+__all__ = ["get_dataset", "M4", "EnergyPower", "SeattleTrail", "SolarPlant", "ETT", "WTH", "ECL"]
 
 
 def get_dataset(dataset_name: str, rootdir: str = None) -> BaseDataset:
