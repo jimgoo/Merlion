@@ -54,6 +54,7 @@ import_alias = dict(
     ExtraTreesForecaster="merlion.models.forecast.baggingtrees:ExtraTreesForecaster",
     LGBMForecaster="merlion.models.forecast.boostingtrees:LGBMForecaster",
     InformerForecaster="merlion.models.forecast.informer:InformerForecaster",
+    RepeatRecent="merlion.models.forecast.repeatrecent:RepeatRecent",
     # Ensembles
     DetectorEnsemble="merlion.models.ensemble.anomaly:DetectorEnsemble",
     ForecasterEnsemble="merlion.models.ensemble.forecast:ForecasterEnsemble",
