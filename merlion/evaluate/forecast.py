@@ -131,6 +131,54 @@ class ForecastScoreAccumulator:
             warnings.warn("Some values very close to 0, sMAPE might not be estimated accurately.")
         return np.mean(200.0 * errors / (scale + 1e-8))
 
+    def mmape(self, threshold_percentage = 0.1):
+        """
+        Modified Mean Absolute Percentage Error (mMAPE). Computed in a similar
+        manner as MAPE with zero weights given to samples with actual values less
+        than threshold. The threshold is calculated as a percentage of the maximum
+        observed value of the actual time series. Metric used to remove effect of 
+        division by lower values as seen in MAPE
+        """
+        self.check_before_eval()
+        predict_values = self.predict.univariates[self.predict.names[0]].np_values
+        ground_truth_values = self.ground_truth.univariates[self.ground_truth.names[0]].np_values
+
+
+        errors = np.abs(ground_truth_values - predict_values)
+        scale = np.abs(ground_truth_values)
+        # scale for smaller sums
+        threshold = (ground_truth_values.max() * threshold_percentage)
+        weight = np.where(ground_truth_values<=threshold, False, True)
+        # Make sure the divisor is not close to zero at each timestamp
+        if (scale < 1e-8).any():
+            warnings.warn("Some values very close to 0, sMAPE might not be estimated accurately.")
+        return np.mean(100.0 * errors / (scale + 1e-8), where =  weight)
+
+    def smmape(self, threshold_percentage = 0.1):
+        """
+        Symmetric and Modified Mean Absolute Percentage Error (mMAPE). Computed in a similar
+        manner as sMAPE with zero weights given to samples with (actual+predicted) values less
+        than threshold. The threshold is calculated as a percentage of the maximum
+        observed value of the (actual+predicted) time series. Metric used to remove effect of 
+        division by lower values as seen in sMAPE
+        """
+        self.check_before_eval()
+        predict_values = self.predict.univariates[self.predict.names[0]].np_values
+        ground_truth_values = self.ground_truth.univariates[self.ground_truth.names[0]].np_values
+
+
+        errors = np.abs(ground_truth_values - predict_values)
+        scale = np.abs(ground_truth_values) + np.abs(predict_values)
+        # scale for smaller sums
+        threshold = (scale.max() * threshold_percentage)
+        weight = np.where(scale<=threshold, False, True)
+        # Make sure the divisor is not close to zero at each timestamp
+        if (scale < 1e-8).any():
+            warnings.warn("Some values very close to 0, sMAPE might not be estimated accurately.")
+        return np.mean(200.0 * errors / (scale + 1e-8), where =  weight)
+
+    
+
     def mase(self):
         """
         Mean Absolute Scaled Error (MASE)
@@ -257,6 +305,19 @@ class ForecastMetric(Enum):
         \\frac{1}{T}\\cdot\\frac{\\sum_{t=1}^{T} (U_t - L_t) + 100 \\cdot (L_t - y_t)[y_t<L_t]
           + 100\\cdot(y_t - U_t)[y_t > U_t]}{\\frac{1}{N-m}\\sum_{t=m+1}^{N}\\left| x_t - x_{t-m} \\right|}.
     
+    """
+
+    mMAPE = partial(accumulate_forecast_score, metric=ForecastScoreAccumulator.mmape)
+    """
+    Modified MAPE (mMAPE) is formulated as:
+ 
+    """
+
+    smMAPE = partial(accumulate_forecast_score, metric=ForecastScoreAccumulator.smmape)
+    """
+    Symmetric and Modified MAPE (smMAPE) is formulated as:
+
+
     """
 
 
