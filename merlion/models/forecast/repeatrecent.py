@@ -23,10 +23,9 @@ class RepeatRecent(ForecasterBase):
         """
         super().__init__(config)
         self.most_recent_value = None
-
-    def train(
-        self, train_data: TimeSeries, train_config=None
-    ) -> Tuple[TimeSeries, None]:
+    
+    
+    def train(self, train_data: TimeSeries, train_config=None) -> Tuple[TimeSeries, None]:
         # Apply training preparation steps. We specify that this model doesn't
         # require evenly sampled time series, and it doesn't require univariate
         # data.
