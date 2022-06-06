@@ -50,5 +50,20 @@ We currently support the following datasets for time series forecasting (`ts_dat
     - There is one 405-variable time series. 
     - Each univariate records the solar energy power in each detector in the plant
     - By default, the data loader returns only the first 100 of 405 univariates
+- [ECL](https://archive.ics.uci.edu/ml/datasets/ElectricityLoadDiagrams20112014)
+    - ECL (Electricity Consuming Load): It collects the electricity consumption (Kwh) of 321 clients.
+	- Due to the missing data (Li et al. 2019), we convert the dataset into hourly consumption of 2 years and set `MT 320` as the target value.
+	- Used in the [Informer](https://arxiv.org/abs/2012.07436) and [Autoformer](https://arxiv.org/abs/2106.13008) papers.
+- [ETT](https://github.com/zhouhaoyi/ETDataset)
+    - ETT (Electricity Transformer Temperature): The ETT is a crucial indicator in the electric power long-term deployment.
+	- We collected 2-year data from two separated counties in China.
+    - Contains one 7-variable time series, target is OT (oil temp).
+	- Used in the [Informer](https://arxiv.org/abs/2012.07436) and [Autoformer](https://arxiv.org/abs/2106.13008) papers.
+- [WTH](https://www.ncei.noaa.gov/data/local-climatological-data/)
+    - This dataset contains local climatological data for nearly 1,600 U.S. locations,
+    4 years from 2010 to 2013, where data points are collected every 1 hour. Each data
+    point consists of the target value “wet bulb” and 11 climate features.
+    - Contains one 12-variable time series, target from paper is WetBulbCelsius.
+	- Used in the [Informer](https://arxiv.org/abs/2012.07436) and [Autoformer](https://arxiv.org/abs/2106.13008) papers.
 
 More details on each dataset can be found in their class-level docstrings, or in the API doc.
